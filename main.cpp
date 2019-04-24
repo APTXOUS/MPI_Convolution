@@ -40,9 +40,9 @@ using namespace std;
 const int N = 5;
 double GsCore[N][N];
 unsigned char *pBmpBuf = NULL; //读入图像数据的指针
-unsigned char **rBmpBuf = NULL;
-unsigned char **gBmpBuf = NULL;
-unsigned char **bBmpBuf = NULL;
+unsigned char *rBmpBuf = NULL;
+unsigned char *gBmpBuf = NULL;
+unsigned char *bBmpBuf = NULL;
 /*******************************************************************************/
 
 void showBmpHead(BITMAPFILEHEADER &pBmpHead)
@@ -173,15 +173,10 @@ void reFormChannel(int numWidth, int numHeigh)
 
     //申请二维动态数组
     int i, j;
-    rBmpBuf = new unsigned char *[reFormHeigh];
-    for (i = 0; i < reFormHeigh; i++)
-        rBmpBuf[i] = new unsigned char[reFormWidth];
-    gBmpBuf = new unsigned char *[reFormHeigh];
-    for (i = 0; i < reFormHeigh; i++)
-        gBmpBuf[i] = new unsigned char[reFormWidth];
-    bBmpBuf = new unsigned char *[reFormHeigh];
-    for (i = 0; i < reFormHeigh; i++)
-        bBmpBuf[i] = new unsigned char[reFormWidth];
+    rBmpBuf = new (nothrow)unsigned char [reFormHeigh*reFormWidth];
+    gBmpBuf = new (nothrow)unsigned char [reFormHeigh*reFormWidth];
+    bBmpBuf = new (nothrow)unsigned char [reFormHeigh*reFormWidth];
+
 
     //赋值并补0
     for (i = 0; i < reFormHeigh; i++)
@@ -190,21 +185,21 @@ void reFormChannel(int numWidth, int numHeigh)
         {
             if (i < N / 2 || i > numHeigh + N / 2)
             {
-                rBmpBuf[i][j] = 0;
-                gBmpBuf[i][j] = 0;
-                bBmpBuf[i][j] = 0;
+                rBmpBuf[i*reFormWidth+j] = 0;
+                gBmpBuf[i*reFormWidth+j] = 0;
+                bBmpBuf[i*reFormWidth+j] = 0;
             }
             else if (j < N / 2 || j > numWidth + N / 2)
             {
-                rBmpBuf[i][j] = 0;
-                gBmpBuf[i][j] = 0;
-                bBmpBuf[i][j] = 0;
+                rBmpBuf[i*reFormWidth+j] = 0;
+                gBmpBuf[i*reFormWidth+j] = 0;
+                bBmpBuf[i*reFormWidth+j] = 0;
             }
             else
             {
-                rBmpBuf[i][j] = pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3];
-                gBmpBuf[i][j] = pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3 + 1];
-                bBmpBuf[i][j] = pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3 + 2];
+                rBmpBuf[i*reFormWidth+j] = pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3];
+                gBmpBuf[i*reFormWidth+j]=  pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3 + 1];
+                bBmpBuf[i*reFormWidth+j] = pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3 + 2];
             }
         }
     }
@@ -240,39 +235,55 @@ void genGsCore()
 
     fclose(fp);
 }
-
-unsigned char getValue(int i, int j, unsigned char **arrary)
+int Value;
+int len=N/2;
+int vvv=-len*Value;
+unsigned char getValue(int ii,unsigned char *arrary)
 {
     int h, k;
-    i = i + N / 2;
-    j = j + N / 2;
     double sum = 0;
-    for (h = 0; h < N; h++)
-        for (k = 0; k < N; k++)
+    int vv=vvv;
+    ii= ii-vvv+len;
+    for (h = -len; h <= len; h++)
+    {
+        for (k = -len; k <=len; k++)
         {
-            sum += arrary[h + i - N / 2][k + j - N / 2] * GsCore[- h + N][- k + N];
+            sum += arrary[vv + ii+k] * GsCore[- h + len][- k + len];
         }
+        vv+=Value;
+    }
     return sum;
 }
 
 /**
  * 卷积公共计算部分
  */
-unsigned char *resBuf = new unsigned char[4096 * 2304 * 3];
+
 unsigned char *convolution(int start_x, int end_x, int BmpWidth)
 {
-    //  unsigned char *resBuf = NULL;
+    unsigned char *resBuf = NULL;
 
-    //   resBuf = new unsigned char[BmpWidth * (end_x - start_x + 1)]; //这个之后移到并行外面,节省并行时间
+    resBuf = new unsigned char[BmpWidth*3 * (end_x - start_x + 1)]; //这个之后移到并行外面,节省并行时间
     cout << "begin" << endl;
-    int i, j;
-    for (i = start_x; i <= end_x; i++)
-        for (j = 0; j < BmpWidth*3; j=j+3)
+    int ii;
+    Value=BmpWidth+N/2+N/2;
+    int reFormWidth=BmpWidth*3;
+    int endi=end_x*reFormWidth;
+    int xx=start_x*(BmpWidth+N/2+N/2);
+    int yy=0;
+    int xx_add=(BmpWidth+N/2+N/2);
+    int yy_v=BmpWidth+N/2;
+    for (ii = start_x*reFormWidth; ii <= endi; ii=ii+3){
+        if(yy==yy_v)
         {
-            resBuf[i * BmpWidth*3 + j + 0] = getValue(i, j/3, rBmpBuf);
-            resBuf[i * BmpWidth*3 + j + 1] = getValue(i, j/3, gBmpBuf);
-            resBuf[i * BmpWidth*3 + j + 2] = getValue(i, j/3, bBmpBuf);
+            xx=xx+xx_add;
+            yy=len;
         }
+        resBuf[ii] = getValue(xx+yy, rBmpBuf);
+        resBuf[ii+1] = getValue(xx+yy, gBmpBuf);
+        resBuf[ii+2] = getValue(xx+yy, bBmpBuf);
+        yy++;
+    }
 
     return resBuf;
 }
