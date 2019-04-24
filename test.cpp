@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-//#include <mpi.h>
+#include <mpi.h>
 
 #pragma pack(1)
 
@@ -184,13 +184,13 @@ void reFormChannel(int numWidth, int numHeigh)
     {
         for (j = 0; j < reFormWidth; j++)
         {
-            if (i < N / 2 || i > numHeigh + N / 2)
+            if (i < N / 2 || i >= numHeigh + N / 2)
             {
                 rBmpBuf[i * reFormWidth + j] = 0;
                 gBmpBuf[i * reFormWidth + j] = 0;
                 bBmpBuf[i * reFormWidth + j] = 0;
             }
-            else if (j < N / 2 || j > numWidth + N / 2)
+            else if (j < N / 2 || j >= numWidth + N / 2)
             {
                 rBmpBuf[i * reFormWidth + j] = 0;
                 gBmpBuf[i * reFormWidth + j] = 0;
@@ -236,6 +236,7 @@ void genGsCore()
 
     fclose(fp);
 }
+
 int Value;
 int len = N / 2;
 int vvv = -len * Value;
@@ -244,7 +245,7 @@ unsigned char getValue(int ii, unsigned char *arrary)
     int h, k;
     double sum = 0;
     int vv = vvv;
-    ii = ii - vvv + len;
+    ii = ii - vvv ;//+ len;
     for (h = -len; h <= len; h++)
     {
         for (k = -len; k <= len; k++)
@@ -260,40 +261,36 @@ unsigned char getValue(int ii, unsigned char *arrary)
  * 卷积公共计算部分
  */
 
-unsigned char *convolution(int start_x, int end_x, int BmpWidth)
+unsigned char *convolution(unsigned char *resBuf,int start_x, int end_x, int BmpWidth)
 {
-    unsigned char *resBuf = NULL;
 
-    resBuf = new (nothrow)unsigned char[BmpWidth * 3 * (end_x - start_x + 1)]; //这个之后移到并行外面,节省并行时间
-    
-    cout << "begin" << endl;
 
     int ii;
     int reFormWidth = BmpWidth * 3;
     int endi = (end_x+1) * reFormWidth;
-
-    int xx = (start_x+N/2) * (BmpWidth + N / 2 + N / 2);
-    int yy = len;
+    
+    int xx = start_x * (BmpWidth + N / 2 + N / 2)+N/2;
+    int yy = 0;
     int xx_add = (BmpWidth + N / 2 + N / 2);
-    int yy_v = BmpWidth + N / 2;
-    for (ii = start_x * reFormWidth; ii <= endi; ii = ii + 3)
+    int yy_v = BmpWidth;
+    for (ii = start_x * reFormWidth; ii < endi; ii = ii + 3)
     {
         if (yy == yy_v)
         {
             xx = xx + xx_add;
-            yy = len;
+            yy = 0;
         }
-        cout<<xx+yy<<endl;
+        //cout<<ii/3/4096<< " "<<ii/3%4096<<" "<<(xx-N/2)/4100<< " "<<yy<<endl;
         resBuf[ii] = getValue(xx + yy, rBmpBuf);
         resBuf[ii + 1] = getValue(xx + yy, gBmpBuf);
         resBuf[ii + 2] = getValue(xx + yy, bBmpBuf);
         yy++;
     }
 
-    cout << "finsh" << endl;
 
-    return resBuf;
+    return 0;
 }
+
 
 int main(int argc, char *argv[])
 {
@@ -317,7 +314,7 @@ int main(int argc, char *argv[])
     fread(&BmpInfo, sizeof(BITMAPINFOHEADER), 1, fp);
 
     // 打印一下文件信息
-    // showBmpHead(BmpHead);
+    //showBmpHead(BmpHead);
     // showBmpInforHead(BmpInfo);
 
     BmpWidth = BmpInfo.biWidth;   //宽度用来计算每行像素的字节数
@@ -343,74 +340,60 @@ int main(int argc, char *argv[])
     int conv_byte_size; // 卷积区域字节数
     Value = BmpWidth + N / 2 + N / 2;
 
-    size=1;
     unsigned char *result = new unsigned char[BmpWidth * 3 * BmpHeight];
-    for(int i=0;i<size;i++)
-    {
-        myrank=i;
-        unsigned char *resBuf = NULL;
+    unsigned char *resBuf = NULL;
+    resBuf=new unsigned char [BmpWidth * 3 * BmpHeight];
+    memset(resBuf,0,BmpWidth * 3 * BmpHeight);
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Status status;
+    start_time = MPI_Wtime();
+
+    if (myrank != 0)
+    { //非0号进程发送消息
         //公共计算部分
         start_x = myrank * BmpHeight / size;
         end_x = start_x + BmpHeight / size - 1;
         if (myrank == size - 1)
             end_x = BmpHeight - 1;
-        cout << myrank << " " << start_x << " " << end_x << endl;
-        resBuf = convolution(start_x, end_x, BmpWidth);
-        memcpy(result, resBuf, BmpWidth*BmpHeight*3);
+        convolution(resBuf,start_x, end_x, BmpWidth);
+        dest=0;
+        MPI_Send(resBuf, BmpWidth * 3 * BmpHeight, MPI_UNSIGNED_CHAR, dest, 99, MPI_COMM_WORLD);
+        end_time = MPI_Wtime();
+        printf("%d process :time used to be: %1.2f\n",myrank, end_time-start_time);
+    }
+    else
+    {   // myrank == 0，即0号进程参与计算并负责接受数据
+        // 设置参数
+        start_x = myrank * BmpHeight / size;
+        end_x = start_x + BmpHeight / size - 1;
+        if (myrank == size - 1)
+            end_x = BmpHeight - 1;
+        convolution(resBuf,start_x, end_x, BmpWidth);
+
+        memcpy(result, resBuf, BmpHeight / size * BmpWidth * 3);
         delete resBuf;
+        resBuf = new unsigned char[BmpWidth * 3 * BmpHeight];
+        // 合并结果
+        for (source = 1; source < size; source++)
+        {
+            MPI_Recv(resBuf, BmpWidth * 3 * BmpHeight, MPI_UNSIGNED_CHAR, MPI_ANY_SOURCE, 99, MPI_COMM_WORLD, &status);
+            if(status.MPI_SOURCE!=size-1)
+                memcpy(result+status.MPI_SOURCE* BmpHeight / size*BmpWidth*3,resBuf+status.MPI_SOURCE* BmpHeight / size*BmpWidth*3, BmpHeight / size*BmpWidth*3 );
+            else
+                memcpy(result+status.MPI_SOURCE* BmpHeight / size*BmpWidth*3,resBuf+status.MPI_SOURCE* BmpHeight / size*BmpWidth*3, BmpWidth * 3 * BmpHeight-status.MPI_SOURCE* BmpHeight / size*BmpWidth*3 );
+            
+        }
+        end_time = MPI_Wtime();
+        saveBmp("final.bmp", result, BmpWidth, BmpHeight, BiBitCount);
+        printf("All time used to be: %1.2f\n", end_time-start_time);
     }
 
-    saveBmp("final.bmp", result, BmpWidth, BmpHeight, BiBitCount);
-
-//     MPI_Init(&argc, &argv);
-//     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-//     MPI_Comm_size(MPI_COMM_WORLD, &size);
-//     MPI_Status status;
-//     start_time = MPI_Wtime();
-//     if (myrank != 0)
-//     { //非0号进程发送消息
-//         unsigned char *resBuf = NULL;
-//         //公共计算部分
-//         start_x = myrank * BmpHeight / size;
-//         end_x = start_x + BmpHeight / size - 1;
-//         if (myrank == size - 1)
-//             end_x = BmpHeight - 1;
-//         cout << myrank << " " << start_x << " " << end_x << endl;
-//         resBuf = convolution(start_x, end_x, BmpWidth);
-//         if (resBuf == NULL)
-//             goto END;
-//         conv_byte_size = BmpWidth * 3 * (end_x - start_x + 1);
-//         dest = 0;
-//         //MPI_Send(resBuf, conv_byte_size, MPI_UNSIGNED_CHAR, dest, 99, MPI_COMM_WORLD);
-//         end_time = MPI_Wtime();
-//     }
-//     else
-//     {   // myrank == 0，即0号进程参与计算并负责接受数据
-//         // 设置参数
-//         unsigned char *resBuf = NULL;
-//         unsigned char *result = new unsigned char[BmpWidth * 3 * BmpHeight];
-//         start_x = myrank * BmpHeight / size;
-//         end_x = start_x + BmpHeight / size - 1;
-//         if (myrank == size - 1)
-//             end_x = BmpHeight - 1;
-//         resBuf = convolution(start_x, end_x, BmpWidth);
-
-//         memcpy(result, resBuf, BmpHeight / size * BmpWidth * 3);
-//         delete resBuf;
-//         resBuf = new unsigned char[BmpWidth * 3 * BmpHeight];
-//         // 合并结果
-//         // for (source = 1; source < size; source++)
-//         // {
-//         //     int count = MPI_Recv(resBuf, BmpWidth * 3 * BmpHeight, MPI_UNSIGNED_CHAR, MPI_ANY_SOURCE, 99, MPI_COMM_WORLD, &status);
-//         //     memcpy(result + source * (BmpHeight / size * BmpWidth * 3), resBuf, count);
-//         // }
-//         saveBmp("final.bmp", result, BmpWidth, BmpHeight, BiBitCount);
-//         end_time = MPI_Wtime();
-//     }
-
-// END:
-//     MPI_Finalize();
-//     // MPI End
+END:
+    MPI_Finalize();
+    // MPI End
 
     if (pBmpBuf)
          delete pBmpBuf;
