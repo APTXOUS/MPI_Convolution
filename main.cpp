@@ -5,7 +5,9 @@
 #include <iostream>
 #include <stdint.h>
 #include <stdlib.h>
-//#include <mpi.h>
+#include <string.h>
+
+#include <mpi.h>
 
 #pragma pack(1)
 
@@ -173,10 +175,9 @@ void reFormChannel(int numWidth, int numHeigh)
 
     //申请二维动态数组
     int i, j;
-    rBmpBuf = new (nothrow)unsigned char [reFormHeigh*reFormWidth];
-    gBmpBuf = new (nothrow)unsigned char [reFormHeigh*reFormWidth];
-    bBmpBuf = new (nothrow)unsigned char [reFormHeigh*reFormWidth];
-
+    rBmpBuf = new (nothrow) unsigned char[reFormHeigh * reFormWidth];
+    gBmpBuf = new (nothrow) unsigned char[reFormHeigh * reFormWidth];
+    bBmpBuf = new (nothrow) unsigned char[reFormHeigh * reFormWidth];
 
     //赋值并补0
     for (i = 0; i < reFormHeigh; i++)
@@ -185,21 +186,21 @@ void reFormChannel(int numWidth, int numHeigh)
         {
             if (i < N / 2 || i > numHeigh + N / 2)
             {
-                rBmpBuf[i*reFormWidth+j] = 0;
-                gBmpBuf[i*reFormWidth+j] = 0;
-                bBmpBuf[i*reFormWidth+j] = 0;
+                rBmpBuf[i * reFormWidth + j] = 0;
+                gBmpBuf[i * reFormWidth + j] = 0;
+                bBmpBuf[i * reFormWidth + j] = 0;
             }
             else if (j < N / 2 || j > numWidth + N / 2)
             {
-                rBmpBuf[i*reFormWidth+j] = 0;
-                gBmpBuf[i*reFormWidth+j] = 0;
-                bBmpBuf[i*reFormWidth+j] = 0;
+                rBmpBuf[i * reFormWidth + j] = 0;
+                gBmpBuf[i * reFormWidth + j] = 0;
+                bBmpBuf[i * reFormWidth + j] = 0;
             }
             else
             {
-                rBmpBuf[i*reFormWidth+j] = pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3];
-                gBmpBuf[i*reFormWidth+j]=  pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3 + 1];
-                bBmpBuf[i*reFormWidth+j] = pBmpBuf[(i - N / 2) * numWidth*3 + (j - N / 2) * 3 + 2];
+                rBmpBuf[i * reFormWidth + j] = pBmpBuf[(i - N / 2) * numWidth * 3 + (j - N / 2) * 3];
+                gBmpBuf[i * reFormWidth + j] = pBmpBuf[(i - N / 2) * numWidth * 3 + (j - N / 2) * 3 + 1];
+                bBmpBuf[i * reFormWidth + j] = pBmpBuf[(i - N / 2) * numWidth * 3 + (j - N / 2) * 3 + 2];
             }
         }
     }
@@ -236,21 +237,21 @@ void genGsCore()
     fclose(fp);
 }
 int Value;
-int len=N/2;
-int vvv=-len*Value;
-unsigned char getValue(int ii,unsigned char *arrary)
+int len = N / 2;
+int vvv = -len * Value;
+unsigned char getValue(int ii, unsigned char *arrary)
 {
     int h, k;
     double sum = 0;
-    int vv=vvv;
-    ii= ii-vvv+len;
+    int vv = vvv;
+    ii = ii - vvv + len;
     for (h = -len; h <= len; h++)
     {
-        for (k = -len; k <=len; k++)
+        for (k = -len; k <= len; k++)
         {
-            sum += arrary[vv + ii+k] * GsCore[- h + len][- k + len];
+            sum += arrary[vv + ii + k] * GsCore[-h + len][-k + len];
         }
-        vv+=Value;
+        vv += Value;
     }
     return sum;
 }
@@ -263,27 +264,31 @@ unsigned char *convolution(int start_x, int end_x, int BmpWidth)
 {
     unsigned char *resBuf = NULL;
 
-    resBuf = new unsigned char[BmpWidth*3 * (end_x - start_x + 1)]; //这个之后移到并行外面,节省并行时间
+    resBuf = new (nothrow)unsigned char[BmpWidth * 3 * (end_x - start_x + 1)]; //这个之后移到并行外面,节省并行时间
+    
     cout << "begin" << endl;
+
     int ii;
-    Value=BmpWidth+N/2+N/2;
-    int reFormWidth=BmpWidth*3;
-    int endi=end_x*reFormWidth;
-    int xx=start_x*(BmpWidth+N/2+N/2);
-    int yy=0;
-    int xx_add=(BmpWidth+N/2+N/2);
-    int yy_v=BmpWidth+N/2;
-    for (ii = start_x*reFormWidth; ii <= endi; ii=ii+3){
-        if(yy==yy_v)
+    int reFormWidth = BmpWidth * 3;
+    int endi = end_x * reFormWidth;
+    int xx = start_x * (BmpWidth + N / 2 + N / 2);
+    int yy = 0;
+    int xx_add = (BmpWidth + N / 2 + N / 2);
+    int yy_v = BmpWidth + N / 2;
+    for (ii = start_x * reFormWidth; ii <= endi; ii = ii + 3)
+    {
+        if (yy == yy_v)
         {
-            xx=xx+xx_add;
-            yy=len;
+            xx = xx + xx_add;
+            yy = len;
         }
-        resBuf[ii] = getValue(xx+yy, rBmpBuf);
-        resBuf[ii+1] = getValue(xx+yy, gBmpBuf);
-        resBuf[ii+2] = getValue(xx+yy, bBmpBuf);
+        resBuf[ii] = getValue(xx + yy, rBmpBuf);
+        resBuf[ii + 1] = getValue(xx + yy, gBmpBuf);
+        resBuf[ii + 2] = getValue(xx + yy, bBmpBuf);
         yy++;
     }
+
+    cout << "finsh" << endl;
 
     return resBuf;
 }
@@ -310,8 +315,8 @@ int main(int argc, char *argv[])
     fread(&BmpInfo, sizeof(BITMAPINFOHEADER), 1, fp);
 
     // 打印一下文件信息
-    showBmpHead(BmpHead);
-    showBmpInforHead(BmpInfo);
+    // showBmpHead(BmpHead);
+    // showBmpInforHead(BmpInfo);
 
     BmpWidth = BmpInfo.biWidth;   //宽度用来计算每行像素的字节数
     BmpHeight = BmpInfo.biHeight; // 像素的行数
@@ -332,56 +337,52 @@ int main(int argc, char *argv[])
 
     int pixStep = 3; // 移动一个像素指针移动的字节数
 
-    unsigned char *resBuf = NULL;
     int start_x, end_x; // 起始的像素点以及计算区域
     int conv_byte_size; // 卷积区域字节数
-    cout << "start convolution" << endl;
-    resBuf = convolution(0, BmpHeight - 1, BmpWidth);
-
-    saveBmp("test.bmp", resBuf, BmpWidth, BmpHeight, BiBitCount);
-    cout << "finsh" << endl;
-    /*
+    Value = BmpWidth + N / 2 + N / 2;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Status status;
     start_time = MPI_Wtime();
     if (myrank != 0)
     { //非0号进程发送消息
-
-        //公共计算部分 
-        //resBuf = convolution(base_x, base_y, conv_width, conv_height);
+        unsigned char *resBuf = NULL;
+        //公共计算部分
+        start_x = myrank * BmpHeight / size;
+        end_x = start_x + BmpHeight / size - 1;
+        if (myrank == size - 1)
+            end_x = BmpHeight - 1;
+        cout << myrank << " " << start_x << " " << end_x << endl;
         resBuf = convolution(start_x, end_x, BmpWidth);
         if (resBuf == NULL)
             goto END;
-        //conv_byte_size = conv_width * conv_height * 3;
+        conv_byte_size = BmpWidth * 3 * (end_x - start_x + 1);
         dest = 0;
-        MPI_Send(resBuf, conv_byte_size, MPI_UNSIGNED_CHAR, dest, 99, MPI_COMM_WORLD);
+        //MPI_Send(resBuf, conv_byte_size, MPI_UNSIGNED_CHAR, dest, 99, MPI_COMM_WORLD);
         end_time = MPI_Wtime();
     }
     else
-    { // myrank == 0，即0号进程参与计算并负责接受数据
-        // 设置参数
-        if (size < 4)
-        {
-        }
-        else if (size >= 4)
-        {
-        }
-        resBuf = convolution(base_x, base_y, conv_width, conv_height);
-        if (resBuf == NULL)
-            cerr << "0# resBuf error." << endl;
+    {   // myrank == 0，即0号进程参与计算并负责接受数据
+        // 设置参数s
+        unsigned char *resBuf = NULL;
+        unsigned char *result = new unsigned char[BmpWidth * 3 * BmpHeight];
+        start_x = myrank * BmpHeight / size;
+        end_x = start_x + BmpHeight / size - 1;
+        if (myrank == size - 1)
+            end_x = BmpHeight - 1;
+        resBuf = convolution(start_x, end_x, BmpWidth);
 
+        memcpy(result, resBuf, BmpHeight / size * BmpWidth * 3);
+        delete resBuf;
+        resBuf = new unsigned char[BmpWidth * 3 * BmpHeight];
         // 合并结果
-        for (source = 1; source < size; source++)
-        {
-            MPI_Recv(resBuf, conv_byte_size, MPI_UNSIGNED_CHAR, MPI_ANY_SOURCE, 99, MPI_COMM_WORLD, &status);
-            if (size < 4)
-            {
-            }
-            else if (size >= 4)
-            {
-            }
-        }
+        // for (source = 1; source < size; source++)
+        // {
+        //     int count = MPI_Recv(resBuf, BmpWidth * 3 * BmpHeight, MPI_UNSIGNED_CHAR, MPI_ANY_SOURCE, 99, MPI_COMM_WORLD, &status);
+        //     memcpy(result + source * (BmpHeight / size * BmpWidth * 3), resBuf, count);
+        // }
+        saveBmp("final.bmp", result, BmpWidth, BmpHeight, BiBitCount);
         end_time = MPI_Wtime();
     }
 
@@ -389,11 +390,8 @@ END:
     MPI_Finalize();
     // MPI End
 
-
-
-*/
     if (pBmpBuf)
-        delete pBmpBuf;
+         delete pBmpBuf;
     fclose(fp);
 
     return 0;
