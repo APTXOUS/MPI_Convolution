@@ -1,0 +1,12 @@
+process1read timeprocess2read time0.02432040.0243199
+
+process0read time0.0315354
+process3read time0.0316401
+reform time0.0846994
+reform time0.0857885
+reform time0.086241
+reform time0.0890121
+1 process time used to be: 0.25
+2 process time used to be: 0.26
+3 process time used to be: 0.27
+All time used to be: 0.28
