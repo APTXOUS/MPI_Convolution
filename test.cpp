@@ -328,7 +328,6 @@ int main(int argc, char *argv[])
     genGsCore();
     // 将多通道转换为单通道数据
     reFormChannel(BmpWidth, BmpHeight);
-
     // MPI 并行计算部分
     int size, myrank, source, dest;
     //MPI_Status status;
@@ -392,6 +391,12 @@ int main(int argc, char *argv[])
     }
 
 END:
+
+    delete rBmpBuf;
+    delete gBmpBuf;
+    delete bBmpBuf;
+    delete result;
+    delete resBuf;
     MPI_Finalize();
     // MPI End
 
