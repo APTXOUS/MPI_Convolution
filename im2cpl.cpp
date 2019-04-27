@@ -465,7 +465,7 @@ int main(int argc, char *argv[])
             
         }
         end_time = MPI_Wtime();
-        saveBmp("final.bmp", result, BmpWidth, BmpHeight, BiBitCount);
+        saveBmp("origin.bmp", result, BmpWidth, BmpHeight, BiBitCount);
         printf("All time used to be: %1.2f\n", end_time-start_time);
     }
 
