@@ -207,19 +207,21 @@ void reFormChannel(int numWidth, int numHeigh,int sx,int sy)
 
     int starti=sx;
     int stopi=sy+N-1;
+    numWidth*=3;
+    numHeigh+=2;
     for (i = starti; i <= stopi; i++)
     {
         for (j = 0; j < reFormWidth; j++)
         {
             pos = i * reFormWidth + j;
-            pos_i = (i - N / 2) * numWidth * 3 + (j - N / 2) * 3;
-            if (i < N / 2 || i >= numHeigh + N / 2)
+            pos_i = (i - 2) * numWidth + (j - 2) * 3;
+            if (i < 2 || i >= numHeigh)
             {
                 rBmpBuf[pos] = 0;
                 gBmpBuf[pos] = 0;
                 bBmpBuf[pos] = 0;
             }
-            else if (j < N / 2 || j >= numWidth + N / 2)
+            else if (j < 2 || j >= numWidth)
             {
                 rBmpBuf[pos] = 0;
                 gBmpBuf[pos] = 0;
@@ -319,7 +321,8 @@ unsigned char *convolution(unsigned char *resBuf, int start_x, int end_x, int Bm
     }
     yy=0;
     xx=xx_v;
-    for (ii = start_x * reFormWidth+1; ii < endi+1; ii = ii + 3)
+    endi=endi+1;
+    for (ii = start_x * reFormWidth+1; ii < endi; ii = ii + 3)
     {
         if (yy == yy_v)
         {
@@ -331,7 +334,8 @@ unsigned char *convolution(unsigned char *resBuf, int start_x, int end_x, int Bm
     }
     yy=0;
     xx=xx_v;
-    for (ii = start_x * reFormWidth+2; ii < endi+2; ii = ii + 3)
+    endi=endi+1;
+    for (ii = start_x * reFormWidth+2; ii < endi; ii = ii + 3)
     {
         if (yy == yy_v)
         {
@@ -350,19 +354,18 @@ void preAction()
 {
     for (int i = 0; i <= 255; i++)
     {
-        book[0][i] = (unsigned char)i * GsCore[0][0];
-        book[1][i] = (unsigned char)i * GsCore[0][1];
-        book[2][i] = (unsigned char)i * GsCore[0][2];
-        book[3][i] = (unsigned char)i * GsCore[1][1];
-        book[4][i] = (unsigned char)i * GsCore[1][2];
-        book[5][i] = (unsigned char)i * GsCore[2][2];
+        book[0][i] = i * GsCore[0][0];
+        book[1][i] = i * GsCore[0][1];
+        book[2][i] = i * GsCore[0][2];
+        book[3][i] = i * GsCore[1][1];
+        book[4][i] = i * GsCore[1][2];
+        book[5][i] = i * GsCore[2][2];
     }
 }
 
 int main(int argc, char *argv[])
 {
 
-    preAction();
     int size, myrank, source, dest;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
@@ -371,6 +374,7 @@ int main(int argc, char *argv[])
 
     double start_time, end_time;
     start_time = MPI_Wtime();
+    preAction();
     unsigned char *resBuf;
     unsigned char *result;
 
