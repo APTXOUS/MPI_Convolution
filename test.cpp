@@ -436,13 +436,13 @@ int main(int argc, char *argv[])
         dest = 0;
 
         readBmp(fp, pBmpBuf, BmpWidth, BmpHeight, BiBitCount,start_x,end_x);
-        printf("%d process read time: %1.2f\n", myrank, MPI_Wtime() - start_time);
+        //printf("%d process read time: %1.2f\n", myrank, MPI_Wtime() - start_time);
         reFormChannel(BmpWidth, BmpHeight,start_x,end_x);
 
 
-        printf("%d process reform time: %1.2f\n", myrank, MPI_Wtime() - start_time);
+        //printf("%d process reform time: %1.2f\n", myrank, MPI_Wtime() - start_time);
         convolution(resBuf, start_x, end_x, BmpWidth);
-        printf("%d process cal time: %1.2f\n", myrank, MPI_Wtime() - start_time);
+        //printf("%d process cal time: %1.2f\n", myrank, MPI_Wtime() - start_time);
         int seek=start_x * (BmpWidth)*3;
 
         MPI_Send(resBuf+seek, (end_x-start_x+1)*BmpWidth*3, MPI_UNSIGNED_CHAR, dest, 99, MPI_COMM_WORLD);
@@ -488,10 +488,10 @@ int main(int argc, char *argv[])
 
 
         readBmp(fp, pBmpBuf, BmpWidth, BmpHeight, BiBitCount,start_x,end_x);
-        printf("%d process read time: %1.2f\n", myrank, MPI_Wtime() - start_time);
+        //printf("%d process read time: %1.2f\n", myrank, MPI_Wtime() - start_time);
         reFormChannel(BmpWidth, BmpHeight,start_x,end_x);
 
-        printf("0 process reform time: %1.2f\n",  MPI_Wtime() - start_time);
+        //printf("0 process reform time: %1.2f\n",  MPI_Wtime() - start_time);
 
         convolution(resBuf, start_x, end_x, BmpWidth);
 
@@ -499,7 +499,7 @@ int main(int argc, char *argv[])
         memcpy(result, resBuf, BmpHeight / size * BmpWidth * 3);
 
         // 合并结果
-        printf("0 process cal time used to be: %1.2f\n",  MPI_Wtime() - start_time);
+       // printf("0 process cal time used to be: %1.2f\n",  MPI_Wtime() - start_time);
         for (source = 1; source < size; source++)
         {
             MPI_Recv(resBuf, BmpWidth * 3 * BmpHeight, MPI_UNSIGNED_CHAR, MPI_ANY_SOURCE, 99, MPI_COMM_WORLD, &status);
@@ -508,8 +508,8 @@ int main(int argc, char *argv[])
             else
                 memcpy(result + status.MPI_SOURCE * BmpHeight / size * BmpWidth * 3, resBuf, status.count);
         }
-        printf("All time used to be: %1.2f\n",  MPI_Wtime() - start_time);
         saveBmp("final.bmp", result, BmpWidth, BmpHeight, BiBitCount);
+        printf("All time used to be: %1.2f\n",  MPI_Wtime() - start_time);
         delete result;
     }
 
