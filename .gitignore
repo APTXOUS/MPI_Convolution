@@ -1,4 +1,5 @@
 .vscode
 .vscode/*
 main
+test
 .gitignore

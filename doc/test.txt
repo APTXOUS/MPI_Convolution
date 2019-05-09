@@ -1,0 +1,16 @@
+1 process read time: 0.02
+2 process read time: 0.02
+3 process read time: 0.03
+0 process read time: 0.03
+2 process reform time: 0.04
+1 process reform time: 0.04
+0 process reform time: 0.04
+3 process reform time: 0.04
+2 process cal time: 0.11
+1 process cal time: 0.12
+3 process cal time: 0.14
+0 process cal time used to be: 0.16
+2 process time used to be: 0.17
+1 process time used to be: 0.17
+3 process time used to be: 0.17
+All time used to be: 0.18
