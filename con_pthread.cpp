@@ -7,8 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <iomanip>
-#include <mpi.h>
-
+#include <pthread.h>
+#include <vector>
+#include <unistd.h>
 #pragma pack(1)
 
 typedef struct BITMAPFILEHEADER
@@ -35,16 +36,28 @@ typedef struct BITMAPINFOHEADER
     uint32_t biClrImportant;
 } BITMAPINFODEADER;
 
+typedef struct {
+    int thread_num;
+    int my_num;
+    int start_line;
+    int end_line;
+} task_para;
+
 using namespace std;
 
 #define BMP_FILE_NAME "./img/timg.bmp"
 
 const int N = 5;
-unsigned char *pBmpBuf = NULL; //读入图像数据的指针
-unsigned char *rBmpBuf = NULL;
-unsigned char *gBmpBuf = NULL;
-unsigned char *bBmpBuf = NULL;
 
+int BmpWidth;   //图像的宽
+int BmpHeight;  //图像的高
+int BiBitCount; //图像类型，每像素位数 8-灰度图 24-彩色图
+unsigned char *bmpBuf;
+unsigned char *result;
+
+int Value;
+int len = N / 2;
+int vvv;
 /*******************************************************************************/
 //骚操作
 double book[6][256] = {{0, 0.014418818362461, 0.028837636724922, 0.043256455087382, 0.057675273449843, 0.072094091812304, 0.086512910174765, 0.10093172853723, 0.11535054689969, 0.12976936526215, 0.14418818362461, 0.15860700198707, 0.17302582034953, 0.18744463871199, 0.20186345707445, 0.21628227543691, 0.23070109379937, 0.24511991216183, 0.25953873052429, 0.27395754888676, 0.28837636724922, 0.30279518561168, 0.31721400397414, 0.3316328223366, 0.34605164069906, 0.36047045906152, 0.37488927742398, 0.38930809578644, 0.4037269141489, 0.41814573251136, 0.43256455087382, 0.44698336923629, 0.46140218759875, 0.47582100596121, 0.49023982432367, 0.50465864268613, 0.51907746104859, 0.53349627941105, 0.54791509777351, 0.56233391613597, 0.57675273449843, 0.59117155286089, 0.60559037122335, 0.62000918958582, 0.63442800794828, 0.64884682631074, 0.6632656446732, 0.67768446303566, 0.69210328139812, 0.70652209976058, 0.72094091812304, 0.7353597364855, 0.74977855484796, 0.76419737321042, 0.77861619157288, 0.79303500993535, 0.80745382829781, 0.82187264666027, 0.83629146502273, 0.85071028338519, 0.86512910174765, 0.87954792011011, 0.89396673847257, 0.90838555683503, 0.92280437519749, 0.93722319355995, 0.95164201192241, 0.96606083028488, 0.98047964864734, 0.9948984670098, 1.0093172853723, 1.0237361037347, 1.0381549220972, 1.0525737404596, 1.0669925588221, 1.0814113771846, 1.095830195547, 1.1102490139095, 1.1246678322719, 1.1390866506344, 1.1535054689969, 1.1679242873593, 1.1823431057218, 1.1967619240842, 1.2111807424467, 1.2255995608092, 1.2400183791716, 1.2544371975341, 1.2688560158966, 1.283274834259, 1.2976936526215, 1.3121124709839, 1.3265312893464, 1.3409501077089, 1.3553689260713, 1.3697877444338, 1.3842065627962, 1.3986253811587, 1.4130441995212, 1.4274630178836, 1.4418818362461, 1.4563006546085, 1.470719472971, 1.4851382913335, 1.4995571096959, 1.5139759280584, 1.5283947464208, 1.5428135647833, 1.5572323831458, 1.5716512015082, 1.5860700198707, 1.6004888382332, 1.6149076565956, 1.6293264749581, 1.6437452933205, 1.658164111683, 1.6725829300455, 1.6870017484079, 1.7014205667704, 1.7158393851328, 1.7302582034953, 1.7446770218578, 1.7590958402202, 1.7735146585827, 1.7879334769451, 1.8023522953076, 1.8167711136701, 1.8311899320325, 1.845608750395, 1.8600275687574, 1.8744463871199, 1.8888652054824, 1.9032840238448, 1.9177028422073, 1.9321216605698, 1.9465404789322, 1.9609592972947, 1.9753781156571, 1.9897969340196, 2.0042157523821, 2.0186345707445, 2.033053389107, 2.0474722074694, 2.0618910258319, 2.0763098441944, 2.0907286625568, 2.1051474809193, 2.1195662992817, 2.1339851176442, 2.1484039360067, 2.1628227543691, 2.1772415727316, 2.191660391094, 2.2060792094565, 2.220498027819, 2.2349168461814, 2.2493356645439, 2.2637544829063, 2.2781733012688, 2.2925921196313, 2.3070109379937, 2.3214297563562, 2.3358485747187, 2.3502673930811, 2.3646862114436, 2.379105029806, 2.3935238481685, 2.407942666531, 2.4223614848934, 2.4367803032559, 2.4511991216183, 2.4656179399808, 2.4800367583433, 2.4944555767057, 2.5088743950682, 2.5232932134306, 2.5377120317931, 2.5521308501556, 2.566549668518, 2.5809684868805, 2.5953873052429, 2.6098061236054, 2.6242249419679, 2.6386437603303, 2.6530625786928, 2.6674813970553, 2.6819002154177, 2.6963190337802, 2.7107378521426, 2.7251566705051, 2.7395754888676, 2.75399430723, 2.7684131255925, 2.7828319439549, 2.7972507623174, 2.8116695806799, 2.8260883990423, 2.8405072174048, 2.8549260357672, 2.8693448541297, 2.8837636724922, 2.8981824908546, 2.9126013092171, 2.9270201275795, 2.941438945942, 2.9558577643045, 2.9702765826669, 2.9846954010294, 2.9991142193919, 3.0135330377543, 3.0279518561168, 3.0423706744792, 3.0567894928417, 3.0712083112042, 3.0856271295666, 3.1000459479291, 3.1144647662915, 3.128883584654, 3.1433024030165, 3.1577212213789, 3.1721400397414, 3.1865588581038, 3.2009776764663, 3.2153964948288, 3.2298153131912, 3.2442341315537, 3.2586529499161, 3.2730717682786, 3.2874905866411, 3.3019094050035, 3.316328223366, 3.3307470417284, 3.3451658600909, 3.3595846784534, 3.3740034968158, 3.3884223151783, 3.4028411335408, 3.4172599519032, 3.4316787702657, 3.4460975886281, 3.4605164069906, 3.4749352253531, 3.4893540437155, 3.503772862078, 3.5181916804404, 3.5326104988029, 3.5470293171654, 3.5614481355278, 3.5758669538903, 3.5902857722527, 3.6047045906152, 3.6191234089777, 3.6335422273401, 3.6479610457026, 3.662379864065, 3.6767986824275},
@@ -101,13 +114,14 @@ void readBmp(FILE *fp, unsigned char *&pBmpBuf, int BmpWidth, int BmpHeight,
     int lineByte = (BmpWidth * BiBitCount / 8 + 3) / 4 * 4;
 
     //申请位图数据所需要的空间，读位图数据进内存
-    pBmpBuf = new (nothrow) unsigned char[lineByte * BmpHeight];
+    // pBmpBuf = new (nothrow) unsigned char[lineByte * BmpHeight];
 
-    if (pBmpBuf == NULL)
-    {
-        cerr << "Mem alloc failed." << endl;
-        exit(-1);
-    }
+    // if (pBmpBuf == NULL)
+    // {
+    //     cerr << "Mem alloc failed." << endl;
+    //     exit(-1);
+    // }
+    
     if(startx-2>0)
         startx=startx-2;
     if(endx+2<BmpHeight)
@@ -189,7 +203,7 @@ bool saveBmp(const char *bmpName, unsigned char *imgBuf, int width, int height,
     return 1;
 }
 //将多通道颜色数据拆分成三个数组
-void reFormChannel(int numWidth, int numHeigh,int sx,int sy)
+void reFormChannel(int numWidth, int numHeigh, int sx, int sy, unsigned char* &rBmpBuf,  unsigned char* &gBmpBuf,  unsigned char* &bBmpBuf)
 {
     //新数组的高度和宽度
     int reFormHeigh = numHeigh + N / 2 + N / 2;
@@ -200,6 +214,12 @@ void reFormChannel(int numWidth, int numHeigh,int sx,int sy)
     rBmpBuf = new (nothrow) unsigned char[reFormHeigh * reFormWidth];
     gBmpBuf = new (nothrow) unsigned char[reFormHeigh * reFormWidth];
     bBmpBuf = new (nothrow) unsigned char[reFormHeigh * reFormWidth];
+
+    if(rBmpBuf == NULL || gBmpBuf == NULL || bBmpBuf == NULL)
+    {
+        cerr << "rgb BmpBuf is NULL." << endl;
+        exit(-1);
+    }
 
     //赋值并补0
     int pos;
@@ -229,18 +249,13 @@ void reFormChannel(int numWidth, int numHeigh,int sx,int sy)
             }
             else
             {
-                rBmpBuf[pos] = pBmpBuf[pos_i];
-                gBmpBuf[pos] = pBmpBuf[pos_i + 1];
-                bBmpBuf[pos] = pBmpBuf[pos_i + 2];
+                rBmpBuf[pos] = bmpBuf[pos_i];
+                gBmpBuf[pos] = bmpBuf[pos_i + 1];
+                bBmpBuf[pos] = bmpBuf[pos_i + 2];
             }
         }
     }
 }
-
-
-int Value;
-int len = N / 2;
-int vvv = -len * Value;
 
 unsigned char getValue(int ii, unsigned char *arrary)
 {
@@ -297,7 +312,7 @@ unsigned char getValue(int ii, unsigned char *arrary)
  * 卷积公共计算部分
  */
 
-unsigned char *convolution(unsigned char *resBuf, int start_x, int end_x, int BmpWidth)
+unsigned char *convolution(unsigned char *resBuf, int start_x, int end_x, int BmpWidth, unsigned char* &rBmpBuf,  unsigned char* &gBmpBuf,  unsigned char* &bBmpBuf)
 {
 
     int ii;
@@ -363,37 +378,46 @@ void preAction()
     }
 }
 
+void* thread_task(void* para) {
+    
+    unsigned char *rBmpBuf = NULL;
+    unsigned char *gBmpBuf = NULL;
+    unsigned char *bBmpBuf = NULL;
+    
+    task_para paras = *(task_para*) para;
+    int start_x = paras.start_line;
+    int end_x = paras.end_line;
+
+    reFormChannel(BmpWidth, BmpHeight, start_x, end_x, rBmpBuf, gBmpBuf, bBmpBuf);
+
+    convolution(result, start_x, end_x, BmpWidth, rBmpBuf, gBmpBuf, bBmpBuf);
 
 
-
-void *create(void *arg)
-{
-    int size, myrank, source, dest;
-    double start_time, end_time;
+    if(rBmpBuf)
+        delete rBmpBuf;
+    if(gBmpBuf)
+        delete gBmpBuf;
+    if(bBmpBuf)
+        delete bBmpBuf;
+    return NULL;
 }
-
 
 int main(int argc, char *argv[])
 {
-
-    int size, myrank, source, dest;
-    MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Status status;
-
     double start_time, end_time;
-    start_time = MPI_Wtime();
+    if (argc != 2) {
+        cerr << "Please input thread number like: ./pthread 4" << endl;
+        exit(-1);
+    }
+    int thread_num = atoi(argv[1]);
+    if(thread_num <= 0) {
+        cerr << "Please input thread number like: ./pthread 4" << endl;
+        exit(-1);
+    }
     preAction();
-    unsigned char *resBuf;
-    unsigned char *result;
 
     BITMAPFILEHEADER BmpHead;
     BITMAPINFODEADER BmpInfo;
-
-    int BmpWidth;   //图像的宽
-    int BmpHeight;  //图像的高
-    int BiBitCount; //图像类型，每像素位数 8-灰度图 24-彩色图
 
     FILE *fp = fopen(BMP_FILE_NAME, "rb"); //二进制读方式打开指定的图像文件
     if (fp == 0)
@@ -407,133 +431,63 @@ int main(int argc, char *argv[])
     //获取图像宽、高、每像素所占位数等信息
     fread(&BmpInfo, sizeof(BITMAPINFOHEADER), 1, fp);
 
-    if (myrank != 0)
-    { //非0号进程发送消息
+    BmpWidth = BmpInfo.biWidth;   //宽度用来计算每行像素的字节数
+    BmpHeight = BmpInfo.biHeight; // 像素的行数
 
-        BmpWidth = BmpInfo.biWidth;   //宽度用来计算每行像素的字节数
-        BmpHeight = BmpInfo.biHeight; // 像素的行数
+    //计算图像每行像素所占的字节数（必须是4的倍数）
+    BiBitCount = BmpInfo.biBitCount;
 
-        //计算图像每行像素所占的字节数（必须是4的倍数）
-        BiBitCount = BmpInfo.biBitCount;
-        // 将图片读取到内存中
+    int lineByte = (BmpWidth * BiBitCount / 8 + 3) / 4 * 4;
 
-       
-        //////////////////////////////////////////////////////////////////
-        //完成图片读取,进行数据预处理
-        //////////////////////////////////////////////////////////////////
+    // 将图片读取到内存中
+    bmpBuf = new(nothrow) unsigned char[BmpHeight * lineByte];
+    result = new(nothrow) unsigned char[BmpHeight * lineByte];
 
-        // 计算卷积核
-       // genGsCore(); //可以替换为固定大小的卷积核
-        // 将多通道转换为单通道数据
-        //使用im2col 算法进行数据优化
-
-        // MPI 并行计算部分
-        //MPI_Status status;
-
-        int pixStep = 3; // 移动一个像素指针移动的字节数
-
-        int start_x, end_x; // 起始的像素点以及计算区域
-        int conv_byte_size; // 卷积区域字节数
-        Value = BmpWidth + N / 2 + N / 2;
-
-        resBuf = new unsigned char[BmpWidth * 3 * BmpHeight];
-        memset(resBuf, 0, BmpWidth * 3 * BmpHeight);
-
-        start_x = myrank * BmpHeight / size;
-        end_x = start_x + BmpHeight / size - 1;
-        if (myrank == size - 1)
-            end_x = BmpHeight - 1;
-        dest = 0;
-
-        readBmp(fp, pBmpBuf, BmpWidth, BmpHeight, BiBitCount,start_x,end_x);
-        //printf("%d process read time: %1.2f\n", myrank, MPI_Wtime() - start_time);
-        reFormChannel(BmpWidth, BmpHeight,start_x,end_x);
-
-
-        //printf("%d process reform time: %1.2f\n", myrank, MPI_Wtime() - start_time);
-        convolution(resBuf, start_x, end_x, BmpWidth);
-        //printf("%d process cal time: %1.2f\n", myrank, MPI_Wtime() - start_time);
-        int seek=start_x * (BmpWidth)*3;
-
-        MPI_Send(resBuf+seek, (end_x-start_x+1)*BmpWidth*3, MPI_UNSIGNED_CHAR, dest, 99, MPI_COMM_WORLD);
-        printf("%d process time used to be: %1.2f\n", myrank, MPI_Wtime() - start_time);
+    if(bmpBuf == NULL || result == NULL)
+    {
+        cerr << "new error" << endl;
+        exit(-1);
     }
-    else
-    { // myrank == 0，即0号进程参与计算并负责接受数据
 
-        BmpWidth = BmpInfo.biWidth;   //宽度用来计算每行像素的字节数
-        BmpHeight = BmpInfo.biHeight; // 像素的行数
-        result = new unsigned char[BmpWidth * BmpHeight * 3];
-        //计算图像每行像素所占的字节数（必须是4的倍数）
-        BiBitCount = BmpInfo.biBitCount;
-        // 将图片读取到内存中
-        
+    readBmp(fp, bmpBuf, BmpWidth, BmpHeight, BiBitCount, 0, BmpHeight - 1);
 
-
-        //////////////////////////////////////////////////////////////////
-        //完成图片读取,进行数据预处理
-        //////////////////////////////////////////////////////////////////
-
-        // 计算卷积核
-        //genGsCore(); //可以替换为固定大小的卷积核
-        // 将多通道转换为单通道数据
-        //使用im2col 算法进行数据优化
-
-        // MPI 并行计算部分
-
-        //MPI_Status status;
-
-        int pixStep = 3; // 移动一个像素指针移动的字节数
-
-        int start_x, end_x; // 起始的像素点以及计算区域
-        int conv_byte_size; // 卷积区域字节数
-        Value = BmpWidth + N / 2 + N / 2;
-
-        resBuf = new unsigned char[BmpWidth * 3 * BmpHeight];
-        memset(resBuf, 0, BmpWidth * 3 * BmpHeight);
-        start_x = myrank * BmpHeight / size;
-        end_x = start_x + BmpHeight / size - 1;
-        if (myrank == size - 1)
-            end_x = BmpHeight - 1;
-
-
-        readBmp(fp, pBmpBuf, BmpWidth, BmpHeight, BiBitCount,start_x,end_x);
-        //printf("%d process read time: %1.2f\n", myrank, MPI_Wtime() - start_time);
-        reFormChannel(BmpWidth, BmpHeight,start_x,end_x);
-
-        //printf("0 process reform time: %1.2f\n",  MPI_Wtime() - start_time);
-
-        convolution(resBuf, start_x, end_x, BmpWidth);
-
-
-        memcpy(result, resBuf, BmpHeight / size * BmpWidth * 3);
-
-        // 合并结果
-       // printf("0 process cal time used to be: %1.2f\n",  MPI_Wtime() - start_time);
-        for (source = 1; source < size; source++)
+    Value = BmpWidth + N / 2 + N / 2;
+    vvv = -len * Value;
+    
+    pthread_t thread_id;
+    vector<pthread_t> threads;
+    // pthread create]
+    task_para *paras = new task_para[thread_num];
+    for (int i = 0; i < thread_num; i++) 
+    {
+        paras[i] = {.thread_num = thread_num};
+        paras[i] .my_num = i;
+        paras[i] .start_line = i * BmpHeight / thread_num;
+        paras[i] .end_line = paras[i] .start_line + BmpHeight / thread_num - 1;
+        if (i == thread_num - 1)
+           paras[i] .end_line = BmpHeight - 1;
+        if(pthread_create(&thread_id, NULL, thread_task, &paras[i] ) < 0)
         {
-            MPI_Recv(resBuf, BmpWidth * 3 * BmpHeight, MPI_UNSIGNED_CHAR, MPI_ANY_SOURCE, 99, MPI_COMM_WORLD, &status);
-            if (status.MPI_SOURCE != size - 1)
-                memcpy(result + status.MPI_SOURCE * BmpHeight / size * BmpWidth * 3, resBuf, status.count);
-            else
-                memcpy(result + status.MPI_SOURCE * BmpHeight / size * BmpWidth * 3, resBuf, status.count);
+            cerr << "pthread_create error" << endl;
+            exit(-1);
         }
-        saveBmp("final.bmp", result, BmpWidth, BmpHeight, BiBitCount);
-        printf("All time used to be: %1.2f\n",  MPI_Wtime() - start_time);
-        delete result;
+        threads.push_back(thread_id);
     }
+
+    // pthread join
+    for (auto tid : threads) 
+    {
+        pthread_join(tid, NULL);
+    }
+
+    saveBmp("result.bmp", result, BmpWidth, BmpHeight, BiBitCount);
+    // printf("All time used to be: %1.2f\n",  MPI_Wtime() - start_time);
 
 END:
 
-    delete rBmpBuf;
-    delete gBmpBuf;
-    delete bBmpBuf;
-    delete resBuf;
-    MPI_Finalize();
-    // MPI End
-
-    if (pBmpBuf)
-        delete pBmpBuf;
+    delete result;
+    delete bmpBuf;
+    delete paras;
     fclose(fp);
 
     return 0;

@@ -14,5 +14,6 @@ For mpi version:
 
 For pthread version
 
-    
+    g++ con_pthread.cpp -o con_pth -pthread
+    ./con_pth 4
 
