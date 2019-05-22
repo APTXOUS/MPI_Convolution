@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <vector>
 #include <unistd.h>
+#include <time.h>
 #pragma pack(1)
 
 typedef struct BITMAPFILEHEADER
@@ -270,39 +271,40 @@ unsigned char getValue(int ii, unsigned char *arrary)
 
     vv = vvv;
     vv += ii;
-    sum1 += book[0][arrary[vv - 2]];
-    sum2 += book[0][arrary[vv + 2]];
-    sum3 += book[1][arrary[vv - 1]];
-    sum4 += book[1][arrary[vv + 1]];
-    sum5 += book[2][arrary[vv]];
+    arrary=arrary+vv-2;
+    sum1 += book[0][arrary[ 0]];
+    sum2 += book[0][arrary[ 4]];
+    sum3 += book[1][arrary[ 1]];
+    sum4 += book[1][arrary[ 3]];
+    sum5 += book[2][arrary[2]];
 
-    vv += Value;
-    sum1 += book[1][arrary[vv - 2]];
-    sum2 += book[1][arrary[vv + 2]];
-    sum3 += book[3][arrary[vv - 1]];
-    sum4 += book[3][arrary[vv + 1]];
-    sum5 += book[4][arrary[vv]];
+    arrary+= Value;
+    sum1 += book[1][arrary[0]];
+    sum2 += book[1][arrary[4]];
+    sum3 += book[3][arrary[1]];
+    sum4 += book[3][arrary[3]];
+    sum5 += book[4][arrary[2]];
 
-    vv += Value;
-    sum1 += book[4][arrary[vv + 1]];
-    sum2 += book[4][arrary[vv - 1]];
-    sum3 += book[5][arrary[vv]];
-    sum4 += book[2][arrary[vv + 2]];
-    sum5 += book[2][arrary[vv - 2]];
+    arrary+= Value;
+    sum1 += book[4][arrary[3]];
+    sum2 += book[4][arrary[1]];
+    sum3 += book[5][arrary[2]];
+    sum4 += book[2][arrary[4]];
+    sum5 += book[2][arrary[0]];
 
-    vv += Value;
-    sum1 += book[3][arrary[vv + 1]];
-    sum2 += book[3][arrary[vv - 1]];
-    sum3 += book[4][arrary[vv]];
-    sum4 += book[1][arrary[vv - 2]];
-    sum5 += book[1][arrary[vv + 2]];
+    arrary+= Value;    
+    sum1 += book[3][arrary[3]];
+    sum2 += book[3][arrary[1]];
+    sum3 += book[4][arrary[2]];
+    sum4 += book[1][arrary[0]];
+    sum5 += book[1][arrary[4]];
 
-    vv += Value;
-    sum1 += book[1][arrary[vv - 1]];
-    sum2 += book[1][arrary[vv + 1]];
-    sum3 += book[0][arrary[vv - 2]];
-    sum4 += book[0][arrary[vv + 2]];
-    sum5 += book[2][arrary[vv]];
+    arrary+= Value;   
+    sum1 += book[1][arrary[1]];
+    sum2 += book[1][arrary[3]];
+    sum3 += book[0][arrary[0]];
+    sum4 += book[0][arrary[4]];
+    sum5 += book[2][arrary[2]];
 
 
     return sum1+sum2+sum3+sum4+sum5;
@@ -314,7 +316,6 @@ unsigned char getValue(int ii, unsigned char *arrary)
 
 unsigned char *convolution(unsigned char *resBuf, int start_x, int end_x, int BmpWidth, unsigned char* &rBmpBuf,  unsigned char* &gBmpBuf,  unsigned char* &bBmpBuf)
 {
-
     int ii;
     int reFormWidth = BmpWidth * 3;
     int endi = (end_x + 1) * reFormWidth;
@@ -324,6 +325,8 @@ unsigned char *convolution(unsigned char *resBuf, int start_x, int end_x, int Bm
     int yy = 0;
     int xx_add = (BmpWidth + N / 2 + N / 2);
     int yy_v = BmpWidth;
+
+    
     for (ii = start_x * reFormWidth; ii < endi; ii = ii + 3)
     {
         if (yy == yy_v)
@@ -331,6 +334,7 @@ unsigned char *convolution(unsigned char *resBuf, int start_x, int end_x, int Bm
             xx = xx + xx_add;
             yy = 0;
         }
+
         resBuf[ii] = getValue(xx + yy, rBmpBuf);
         yy++;
     }
@@ -379,7 +383,7 @@ void preAction()
 }
 
 void* thread_task(void* para) {
-    
+    clock_t start;
     unsigned char *rBmpBuf = NULL;
     unsigned char *gBmpBuf = NULL;
     unsigned char *bBmpBuf = NULL;
