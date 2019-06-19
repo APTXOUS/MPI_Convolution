@@ -90,43 +90,6 @@ static __global__ void kernel_GaussianFilt(int width, int height, int byteCount,
 		}
 }
 
-static __global__ void kernel_GaussianFilt_const(int width, int height, int byteCount, unsigned char *d_src_imgbuf, unsigned char *d_dst_imgbuf)
-{
-	const int tix = blockDim.x * blockIdx.x + threadIdx.x;
-	const int tiy = blockDim.y * blockIdx.y + threadIdx.y;
-
-	const int threadTotalX = blockDim.x * gridDim.x;
-	const int threadTotalY = blockDim.y * gridDim.y;
-
-	for (int ix = tix; ix < height; ix += threadTotalX)
-		for (int iy = tiy; iy < width; iy += threadTotalY)
-		{
-			for (int k = 0; k < byteCount; k++)
-			{
-				int sum = 0; //临时值
-				int tempPixelValue = 0;
-				for (int m = -2; m <= 2; m++)
-				{
-					for (int n = -2; n <= 2; n++)
-					{
-						//边界处理，幽灵元素赋值为零
-						if (ix + m < 0 || iy + n < 0 || ix + m >= height || iy + n >= width)
-							tempPixelValue = 0;
-						else
-							tempPixelValue = *(d_src_imgbuf + (ix + m) * width * byteCount + (iy + n) * byteCount + k);
-						sum += tempPixelValue * d_const_Gaussian[(m + 2) * 5 + n + 2];
-					}
-				}
-
-				if (sum / 273 < 0)
-					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = 0;
-				else if (sum / 273 > 255)
-					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = 255;
-				else
-					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = sum / 273;
-			}
-		}
-}
 
 static __global__ void max_pooling(int width, int height, int byteCount, unsigned char *d_src_imgbuf, unsigned char *d_dst_imgbuf)
 {
@@ -251,13 +214,15 @@ void readBmp(FILE *fp,  unsigned char *&pBmpBuf, int BmpWidth, int BmpHeight,int
 		endx = endx + 2;
 
 	fseek(fp, startx * lineByte, SEEK_CUR);
-	cerr<<fread(pBmpBuf + startx * lineByte, lineByte * (endx - startx + 1), 1, fp)<<endl;
+	if(fread(pBmpBuf + startx * lineByte, lineByte * (endx - startx + 1), 1, fp))
+		;
 
 	return;
 }
 
 int main()
 {
+
 	//查看显卡配置
 	struct cudaDeviceProp pror;
 	cudaGetDeviceProperties(&pror, 0);
@@ -279,15 +244,18 @@ int main()
 			return 0;
 	}
 	//获取位图文件头结构BITMAPFILEHEADER
-	fread(&BmpHead, sizeof(BITMAPFILEHEADER), 1, fp);
+	if(fread(&BmpHead, sizeof(BITMAPFILEHEADER), 1, fp)==0)
+		;
 
 	//获取图像宽、高、每像素所占位数等信息
-	fread(&BmpInfo, sizeof(BITMAPINFOHEADER), 1, fp);
+	if(fread(&BmpInfo, sizeof(BITMAPINFOHEADER), 1, fp)==0)
+		;
 	width = BmpInfo.biWidth;   //宽度用来计算每行像素的字节数
 	height = BmpInfo.biHeight; // 像素的行数
 	byteCount= BmpInfo.biBitCount;
 
 	readBmp(fp, h_src_imgbuf, width, height, byteCount, 0, height - 1);
+
 
 	byteCount= BmpInfo.biBitCount/8;
 
@@ -306,10 +274,12 @@ int main()
 	unsigned char *d_guassian_imgbuf;
 	unsigned char *d_guassian_imgbuf_pooling;
 
+
 	cudaMalloc((void **)&d_src_imgbuf, size1);
 	cudaMalloc((void **)&d_guassian_imgbuf, size1);
 	cudaMalloc((void **)&d_guassian_imgbuf_pooling, size2);
 	
+
 
 	//把数据从Host传到Device
 	cudaMemcpy(d_src_imgbuf, h_src_imgbuf, size1, cudaMemcpyHostToDevice);
@@ -334,6 +304,10 @@ int main()
 	dim3 grid(bx, by);					//网格的结构
 	dim3 block(BLOCKDIM_X, BLOCKDIM_Y); //块的结构
 
+
+	int width2 = width / 2;
+	int height2 = height / 2;
+
 	//CUDA计时函数
 	cudaEvent_t start, stop; //CUDA计时机制
 	cudaEventCreate(&start);
@@ -353,8 +327,6 @@ int main()
 	if (by > GRIDDIM_Y)
 		by = GRIDDIM_Y;
 
-	int width2 = width / 2;
-	int height2 = height / 2;
 
 	max_pooling<<<grid, block>>>(width2, height2, byteCount, d_guassian_imgbuf, d_guassian_imgbuf_pooling);
 	cudaMemcpy(h_guassian_imgbuf_pooling, d_guassian_imgbuf_pooling, size2, cudaMemcpyDeviceToHost); //数据传回主机端
