@@ -1,205 +1,341 @@
-
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+#define _CRT_SECURE_NO_WARNINGS
+#include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include"device_launch_parameters.h"
-#include"cuda_runtime.h"
-#include<device_functions.h>
+#include <sys/types.h>
+#include <iostream>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <iomanip>
+#include <pthread.h>
+#include <vector>
+#include <unistd.h>
+#include <time.h>
+#pragma pack(1)
+#include <stdio.h>
+#include <math.h>
+#include <iostream>
+using namespace std;
 
-typedef uint8_t BYTE;
-typedef uint32_t DWORD;
-typedef int32_t LONG;
-typedef int64_t LONGLONG;
+#define BLOCKDIM_X 8
+#define BLOCKDIM_Y 8
 
-typedef union _LARGE_INTEGER {
-  struct {
-    DWORD LowPart;
-    LONG  HighPart;
-  };
-  struct {
-    DWORD LowPart;
-    LONG  HighPart;
-  } u;
-  LONGLONG QuadPart;
-} LARGE_INTEGER, *PLARGE_INTEGER;
- 
+#define GRIDDIM_X 64
+#define GRIDDIM_Y 64
 #define MASK_WIDTH 5
-int filter_size = MASK_WIDTH;
-int arr_size = 4096;
-int res_size = arr_size;
-#define O_TILE_WIDTH 64
-#define BLOCK_WIDTH (O_TILE_WIDTH + MASK_WIDTH - 1)
- 
- 
-void Conv2(float** filter, float** arr, float** res, int filter_size, int arr_size) {
-	int temp;
- 
-	for (int i = 0; i<arr_size; i++) {
-		for (int j = 0; j<arr_size; j++) {
-			temp = 0;
-			int starti = i - filter_size / 2;
-			int startj = j - filter_size / 2;
-			for (int m = starti; m<starti + filter_size; m++) {
-				for (int n = startj; n<startj + filter_size; n++) {
-					if (m >= 0 && m<arr_size&&n >= 0 && n<arr_size) {
-						temp += filter[m - starti][n - startj] * arr[m][n];
+
+__constant__ int d_const_Gaussian[MASK_WIDTH * MASK_WIDTH]; //分配常数存储器
+
+typedef struct BITMAPFILEHEADER
+{
+	uint16_t bfType;
+	uint32_t bfSize;
+	uint16_t bfReserved1;
+	uint16_t bfReserved2;
+	uint32_t bfOffBits;
+} BITMAPFILEHEADER;
+
+typedef struct BITMAPINFOHEADER
+{
+	uint32_t biSize;
+	uint32_t biWidth;
+	uint32_t biHeight;
+	uint16_t biPlanes;
+	uint16_t biBitCount;
+	uint32_t biCompression;
+	uint32_t biSizeImage;
+	uint32_t biXPelsPerMeter;
+	uint32_t biYPelsPerMeter;
+	uint32_t biClrUsed;
+	uint32_t biClrImportant;
+} BITMAPINFOHEADER;
+
+static __global__ void kernel_GaussianFilt(int width, int height, int byteCount, unsigned char *d_src_imgbuf, unsigned char *d_dst_imgbuf)
+{
+	const int tix = blockDim.x * blockIdx.x + threadIdx.x;
+	const int tiy = blockDim.y * blockIdx.y + threadIdx.y;
+
+	const int threadTotalX = blockDim.x * gridDim.x;
+	const int threadTotalY = blockDim.y * gridDim.y;
+
+	for (int ix = tix; ix < height; ix += threadTotalX)
+		for (int iy = tiy; iy < width; iy += threadTotalY)
+		{
+			for (int k = 0; k < byteCount; k++)
+			{
+				int sum = 0; //临时值
+				int tempPixelValue = 0;
+				for (int m = -2; m <= 2; m++)
+				{
+					for (int n = -2; n <= 2; n++)
+					{
+						//边界处理，幽灵元素赋值为零
+						if (ix + m < 0 || iy + n < 0 || ix + m >= height || iy + n >= width)
+							tempPixelValue = 0;
+						else
+							tempPixelValue = *(d_src_imgbuf + (ix + m) * width * byteCount + (iy + n) * byteCount + k);
+						sum += tempPixelValue * d_const_Gaussian[(m + 2) * 5 + n + 2];
 					}
 				}
+
+				if (sum / 273 < 0)
+					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = 0;
+				else if (sum / 273 > 255)
+					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = 255;
+				else
+					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = sum / 273;
 			}
-			res[i][j] = temp;
 		}
-	}
 }
- 
-//kernel function
-__global__
-void convolution_2D_basic(float *in, float *out, float *mask, int maskwidth, int w, int h) {
-	int Col = blockIdx.x*blockDim.x + threadIdx.x;
-	int Row = blockIdx.y*blockDim.y + threadIdx.y;
-	if (Row < h&&Col < w) {
-		float pixVal = 0;
-		//start
-		int startCol = Col - maskwidth / 2;
-		int startRow = Row - maskwidth / 2;
-		//caculate the res
-		for (int i = 0; i < maskwidth; i++)
+
+static __global__ void max_pooling(int width, int height, int byteCount, unsigned char *d_src_imgbuf, unsigned char *d_dst_imgbuf)
+{
+	const int tix = blockDim.x * blockIdx.x + threadIdx.x;
+	const int tiy = blockDim.y * blockIdx.y + threadIdx.y;
+
+	const int threadTotalX = blockDim.x * gridDim.x;
+	const int threadTotalY = blockDim.y * gridDim.y;
+
+	for (int ix = tix; ix < height; ix += threadTotalX)
+		for (int iy = tiy; iy < width; iy += threadTotalY)
 		{
-			for (int j = 0; j < maskwidth; j++)
+			for (int k = 0; k < byteCount; k++)
 			{
-				int curRow = startRow + i;
-				int curCol = startCol + j;
-				if (curRow > -1 && curRow<h&&curCol>-1 && curCol < w)
+				unsigned char temp = 0; //临时值
+				unsigned char max_char = 0;
+				for (int m = 0; m <= 1; m++)
 				{
-					pixVal += mask[i*maskwidth + j] * in[curRow*w + curCol];
+					for (int n = 0; n <= 1; n++)
+					{
+						temp = *(d_src_imgbuf + (ix * 2 + m) * width * 2 * byteCount + (iy * 2 + n) * byteCount + k);
+						if (temp > max_char)
+							max_char = temp;
+					}
 				}
+
+				*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = max_char;
 			}
 		}
-		out[Row*w + Col] = pixVal;
-	}
 }
- 
- 
-//kernel function
-__global__
-void convolution_2D_shared(float *in, float *out, float *mask, int maskwidth, int w, int h) {
-	int tx = threadIdx.x;
-	int ty = threadIdx.y;
-	int row_o = blockIdx.y*O_TILE_WIDTH + ty;
-	int col_o = blockIdx.x*O_TILE_WIDTH + tx;
-	int row_i = row_o - maskwidth / 2;
-	int col_i = col_o - maskwidth / 2;
-	__shared__ float Ns[BLOCK_WIDTH][BLOCK_WIDTH];
-	if ((row_i >= 0) && (row_i < h) &&
-		(col_i >= 0) && (col_i < w)) {
-		Ns[ty][tx] = in[row_i * w + col_i];
-	}
-	else {
-		Ns[ty][tx] = 0.0f;
-	}
-	float output = 0.0f;
-	if (ty < O_TILE_WIDTH && tx < O_TILE_WIDTH) {
-		for (int i = 0; i < maskwidth; i++) {
-			for (int j = 0; j < maskwidth; j++) {
-				output += mask[i*maskwidth+j] * Ns[i + ty][j + tx];
-			}
-		}
-	if (row_o < h && col_o < w)
-	{
-			out[row_o*w + col_o] = output;
-	}
-	}
-}
- 
-int check(float *a, float *b, int arr_size_1D)
-{
-	float res = 0;
-	for (int i = 0; i<arr_size_1D; i++)
-	{
-		res += (a[i] - b[i]);
-	}
-	if ((res - 0)<1e-7)
-		return 1;
-	return 0;
-}
-__global__ void test()
-{
-	int Col = blockIdx.x*blockDim.x + threadIdx.x;
-	int Row = blockIdx.y*blockDim.y + threadIdx.y;
-	printf("%d,%d]\n", Row, Col);
-	printf("%d,%d,%d)\n", blockDim.y, blockDim.x, blockDim.z);
-	printf("%d,%d,%d)\n", gridDim.x, gridDim.y, gridDim.z);
-}
-float  pFilter[4096][4096],arr[4096][4096],res[4096][4096];
-int  main()
-{
-	printf("the mask(filter) size is :%d X %d.\n", filter_size, filter_size);
-	printf("the matrix size is :%d X %d.\n", arr_size, arr_size);
-	clock_t start_CPU, end_CPU;
- 
-	// //
 
 
-	
-	//arr res pFilter
-	int arr_size_1D = arr_size*arr_size;
-	int filter_size_1D = filter_size*filter_size;
-	float *arr_1D = (float*)malloc(arr_size_1D * sizeof(float));
-	float *arr_1D_Cpu = (float*)malloc(arr_size_1D * sizeof(float));
-	float *res_1D = (float*)malloc(arr_size_1D * sizeof(float));
-	float *filter1D = (float*)malloc(filter_size_1D * sizeof(float));
- 
- 
-	//allocate mem
-	float *inD, *outD, *maskD;
-	LARGE_INTEGER  num;
-	long long start, end, freq;
-	
-	freq = num.QuadPart;
-	start = num.QuadPart;
- 
-	//malloc
-	cudaMalloc((void**)&inD, sizeof(float)*arr_size_1D);
-	cudaMalloc((void**)&outD, sizeof(float)*arr_size_1D);
-	cudaMalloc((void**)&maskD, sizeof(float*)*filter_size_1D);
- 
-	//copy
-	cudaMemcpy(inD, arr_1D, sizeof(float)*arr_size_1D, cudaMemcpyHostToDevice);
-	cudaMemcpy(outD, arr_1D, sizeof(float)*arr_size_1D, cudaMemcpyHostToDevice);
-	cudaMemcpy(maskD, filter1D, sizeof(float)*filter_size_1D, cudaMemcpyHostToDevice);
-	//kerner function void convolution_2D_basic(float *in,float *out,float *mask,int maskwidth,int w,int h)
-	
-	// int threadPerBlockX = 16;
-	// int threadPerBlockY = 16;
-	// dim3 grid((arr_size - 1) / threadPerBlockX + 1,(arr_size - 1) / threadPerBlockY + 1,1);
-	// dim3 block(threadPerBlockX, threadPerBlockY);
-	// convolution_2D_basic << <grid, block >>>(inD, outD, maskD, filter_size, arr_size, arr_size);
- 
-	dim3 dimBlock(BLOCK_WIDTH, BLOCK_WIDTH);
-    dim3 dimGrid((arr_size - 1) / O_TILE_WIDTH + 1, (arr_size - 1) / O_TILE_WIDTH + 1, 1);
-    start_CPU = clock();
-	convolution_2D_shared << <dimGrid, dimBlock >> >(inD, outD, maskD, filter_size, arr_size, arr_size);
- 
-	//copy back
-	cudaMemcpy(res_1D, outD, sizeof(float)*arr_size_1D, cudaMemcpyDeviceToHost);
-	printf("-------------------GPU version Done!------------------\n");
-	end_CPU = clock();
-	float time2= (float)(end_CPU - start_CPU) / CLOCKS_PER_SEC;
-	printf("GPU time:%f ms\n", time2*1000);
-	
-	
-	cudaFree(inD);
-	cudaFree(outD);
-	cudaFree(maskD);
- 
- 
-	//check the res;
-	//check(arr_1D,res_1D,arr_size_1D);
-	printf("the check result is : %d\n", check(res_1D, arr_1D_Cpu, arr_size_1D));
-//	printf("the speed up ratio is :%.2f\n", time*1000/ ((end_CPU - start_CPU) * 1000 * 1.0 / CLOCKS_PER_SEC));
-	for (int i = 0; i<arr_size_1D; i++)
+
+bool saveBmp(const char *bmpName, unsigned char *imgBuf, int width, int height,
+			 int biBitCount)
+{
+	//如果位图数据指针为0，则没有数据传入，函数返回
+	if (!imgBuf)
+		return 0;
+
+	//颜色表大小，以字节为单位，灰度图像颜色表为1024字节，彩色图像颜色表大小为0
+	int colorTablesize = 0;
+
+	if (biBitCount == 8)
+		colorTablesize = 1024; // 8*128
+
+	//待存储图像数据每行字节数为4的倍数
+	int lineByte = (width * biBitCount / 8 + 3) / 4 * 4;
+
+	//以二进制写的方式打开文件
+	FILE *fp = fopen(bmpName, "wb");
+
+	if (fp == 0)
 	{
-		//printf("%.2f ", res_1D[i]);
+		cerr << "Open file error." << endl;
+		return 0;
 	}
+
+	//申请位图文件头结构变量，填写文件头信息
+	BITMAPFILEHEADER fileHead;
+
+	fileHead.bfType = 0x4D42; // bmp类型
+
+	// bfSize是图像文件4个组成部分之和
+	fileHead.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) +
+					  colorTablesize + lineByte * height;
+	fileHead.bfReserved1 = 0;
+	fileHead.bfReserved2 = 0;
+
+	// bfOffBits是图像文件前3个部分所需空间之和
+	fileHead.bfOffBits = 54 + colorTablesize;
+
+	//写文件头进文件
+	fwrite(&fileHead, sizeof(BITMAPFILEHEADER), 1, fp);
+
+	//申请位图信息头结构变量，填写信息头信息
+	BITMAPINFOHEADER head;
+
+	head.biBitCount = biBitCount;
+	head.biClrImportant = 0;
+	head.biClrUsed = 0;
+	head.biCompression = 0;
+	head.biHeight = height;
+	head.biPlanes = 1;
+	head.biSize = 40;
+	head.biSizeImage = lineByte * height;
+	head.biWidth = width;
+	head.biXPelsPerMeter = 0;
+	head.biYPelsPerMeter = 0;
+
+	//写位图信息头进内存
+	fwrite(&head, sizeof(BITMAPINFOHEADER), 1, fp);
+
+	//写位图数据进文件
+	fwrite(imgBuf, height * lineByte, 1, fp);
+
+	//关闭文件
+	fclose(fp);
+
+	return 1;
+}
+
+void readBmp(FILE *fp,  unsigned char *&pBmpBuf, int BmpWidth, int BmpHeight,int BiBitCount, int startx, int endx)
+{
+	/**
+* 灰度图像有颜色表，且颜色表表项为256
+* (可以理解为lineByte是对bmpWidth的以4为步长的向上取整)
+*/
+	int lineByte = (BmpWidth * BiBitCount / 8 + 3) / 4 * 4;
+
+	//申请位图数据所需要的空间，读位图数据进内存
+	pBmpBuf = new (nothrow) unsigned char[lineByte * BmpHeight];
+
+	if (pBmpBuf == NULL)
+	{
+		cerr << "Mem alloc failed." << endl;
+		exit(-1);
+	}
+	if (startx - 2 > 0)
+		startx = startx - 2;
+	if (endx + 2 < BmpHeight)
+		endx = endx + 2;
+
+	fseek(fp, startx * lineByte, SEEK_CUR);
+	cerr<<fread(pBmpBuf + startx * lineByte, lineByte * (endx - startx + 1), 1, fp)<<endl;
+
+	return;
+}
+
+int main()
+{
+	//查看显卡配置
+	struct cudaDeviceProp pror;
+	cudaGetDeviceProperties(&pror, 0);
+
+	unsigned char *h_src_imgbuf; //图像指针
+	int width, height, byteCount;
+	char rootPath1[] = "./img/timg.bmp";
+
+	//h_src_imgbuf = readBmp(rootPath1, &width, &height, &byteCount);
+
+
+	BITMAPFILEHEADER BmpHead;
+	BITMAPINFOHEADER BmpInfo;
+
+	FILE *fp = fopen(rootPath1, "rb"); //二进制读方式打开指定的图像文件
+	if (fp == 0)
+	{
+			cerr << "Can not open " << rootPath1 << endl;
+			return 0;
+	}
+	//获取位图文件头结构BITMAPFILEHEADER
+	fread(&BmpHead, sizeof(BITMAPFILEHEADER), 1, fp);
+
+	//获取图像宽、高、每像素所占位数等信息
+	fread(&BmpInfo, sizeof(BITMAPINFOHEADER), 1, fp);
+	width = BmpInfo.biWidth;   //宽度用来计算每行像素的字节数
+	height = BmpInfo.biHeight; // 像素的行数
+	byteCount= BmpInfo.biBitCount;
+
+	readBmp(fp, h_src_imgbuf, width, height, byteCount, 0, height - 1);
+
+	byteCount= BmpInfo.biBitCount/8;
+
+	int size1 = width * height * byteCount * sizeof(unsigned char);
+	int size2 = width * height * byteCount * sizeof(unsigned char) / 4; //max pooling 2*2
+
+	printf("the matrix size is :%d X %d.\n", width, height);
+
+
+	//输出图像内存-host端
+	unsigned char *h_guassian_imgbuf = new unsigned char[width * height * byteCount];
+	unsigned char *h_guassian_imgbuf_pooling = new unsigned char[width * height * byteCount / 4];
+
+	//分配显存空间
+	unsigned char *d_src_imgbuf;
+	unsigned char *d_guassian_imgbuf;
+	unsigned char *d_guassian_imgbuf_pooling;
+
+	cudaMalloc((void **)&d_src_imgbuf, size1);
+	cudaMalloc((void **)&d_guassian_imgbuf, size1);
+	cudaMalloc((void **)&d_guassian_imgbuf_pooling, size2);
 	
+
+	//把数据从Host传到Device
+	cudaMemcpy(d_src_imgbuf, h_src_imgbuf, size1, cudaMemcpyHostToDevice);
+
+
+	//将高斯模板传入constant memory
+	int Gaussian[25] = {1, 4, 7, 4, 1,
+						4, 16, 26, 16, 4,
+						7, 26, 41, 26, 7,
+						4, 16, 26, 16, 4,
+						1, 4, 7, 4, 1}; //总和为273
+	cudaMemcpyToSymbol(d_const_Gaussian, Gaussian, 25 * sizeof(int));
+
+	int bx = ceil((double)width / BLOCKDIM_X); //网格和块的分配
+	int by = ceil((double)height / BLOCKDIM_Y);
+
+	if (bx > GRIDDIM_X)
+		bx = GRIDDIM_X;
+	if (by > GRIDDIM_Y)
+		by = GRIDDIM_Y;
+
+	dim3 grid(bx, by);					//网格的结构
+	dim3 block(BLOCKDIM_X, BLOCKDIM_Y); //块的结构
+
+	//CUDA计时函数
+	cudaEvent_t start, stop; //CUDA计时机制
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	cudaEventRecord(start, 0);
+
+	//kernel--高斯滤波
+	kernel_GaussianFilt<<<grid, block>>>(width, height, byteCount, d_src_imgbuf, d_guassian_imgbuf);
+	cudaMemcpy(h_guassian_imgbuf, d_guassian_imgbuf, size1, cudaMemcpyDeviceToHost); //数据传回主机端
+
+	// //max-pooling
+	bx = ceil((double)width / 2 / BLOCKDIM_X); //网格和块的分配
+	by = ceil((double)height / 2 / BLOCKDIM_Y);
+
+	if (bx > GRIDDIM_X)
+		bx = GRIDDIM_X;
+	if (by > GRIDDIM_Y)
+		by = GRIDDIM_Y;
+
+	int width2 = width / 2;
+	int height2 = height / 2;
+
+	max_pooling<<<grid, block>>>(width2, height2, byteCount, d_guassian_imgbuf, d_guassian_imgbuf_pooling);
+	cudaMemcpy(h_guassian_imgbuf_pooling, d_guassian_imgbuf_pooling, size2, cudaMemcpyDeviceToHost); //数据传回主机端
+
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	float elapsedTime = 0;
+	cudaEventElapsedTime(&elapsedTime, start, stop);
+
+	printf("卷积部分所用时间为：%f ms\n", elapsedTime);
+
+	saveBmp("result_other_pool.bmp", h_guassian_imgbuf_pooling, width2, height2, byteCount*8);
+
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+	//释放内存
+	cudaFree(d_src_imgbuf);
+	cudaFree(d_guassian_imgbuf);
+
+	delete[] h_src_imgbuf;
+	delete[] h_guassian_imgbuf;
 }

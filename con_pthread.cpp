@@ -454,7 +454,7 @@ int main(int argc, char *argv[])
     }
 
     readBmp(fp, bmpBuf, BmpWidth, BmpHeight, BiBitCount, 0, BmpHeight - 1);
-
+    printf("the matrix size is :%d X %d.\n", BmpWidth, BmpHeight);
     Value = BmpWidth + N / 2 + N / 2;
     vvv = -len * Value;
     
