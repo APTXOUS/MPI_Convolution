@@ -90,6 +90,44 @@ static __global__ void kernel_GaussianFilt(int width, int height, int byteCount,
 		}
 }
 
+static __global__ void kernel_GaussianFilt_const(int width, int height, int byteCount, unsigned char *d_src_imgbuf, unsigned char *d_dst_imgbuf)
+{
+	const int tix = blockDim.x * blockIdx.x + threadIdx.x;
+	const int tiy = blockDim.y * blockIdx.y + threadIdx.y;
+
+	const int threadTotalX = blockDim.x * gridDim.x;
+	const int threadTotalY = blockDim.y * gridDim.y;
+
+	for (int ix = tix; ix < height; ix += threadTotalX)
+		for (int iy = tiy; iy < width; iy += threadTotalY)
+		{
+			for (int k = 0; k < byteCount; k++)
+			{
+				int sum = 0; //临时值
+				int tempPixelValue = 0;
+				for (int m = -2; m <= 2; m++)
+				{
+					for (int n = -2; n <= 2; n++)
+					{
+						//边界处理，幽灵元素赋值为零
+						if (ix + m < 0 || iy + n < 0 || ix + m >= height || iy + n >= width)
+							tempPixelValue = 0;
+						else
+							tempPixelValue = *(d_src_imgbuf + (ix + m) * width * byteCount + (iy + n) * byteCount + k);
+						sum += tempPixelValue * d_const_Gaussian[(m + 2) * 5 + n + 2];
+					}
+				}
+
+				if (sum / 273 < 0)
+					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = 0;
+				else if (sum / 273 > 255)
+					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = 255;
+				else
+					*(d_dst_imgbuf + (ix)*width * byteCount + (iy)*byteCount + k) = sum / 273;
+			}
+		}
+}
+
 static __global__ void max_pooling(int width, int height, int byteCount, unsigned char *d_src_imgbuf, unsigned char *d_dst_imgbuf)
 {
 	const int tix = blockDim.x * blockIdx.x + threadIdx.x;
